@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📞 New Call Handled by Ellysha</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f4; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+
+    <!-- Main Container -->
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f4; padding: 20px 0;">
+
+        <!-- Email Container -->
+        <tr>
+            <td align="center">
+                <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden;">
+
+                    <!-- Header Banner -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 40px; text-align: center;">
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td align="center">
+                                        <div style="width: 60px; height: 60px; background-color: rgba(255,255,255,0.2); border-radius: 50%; display: inline-block; line-height: 60px;">
+                                            <span style="font-size: 32px;">📞</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding-top: 15px;">
+                                        <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">New Call Handled</h1>
+                                        <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">by Ellysha Voice Assistant</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Call Summary Section -->
+                    <tr>
+                        <td style="padding: 30px 40px;">
+                            <h2 style="color: #333; margin: 0 0 20px 0; font-size: 20px; border-bottom: 2px solid #667eea; padding-bottom: 10px;">
+                                📊 Call Summary
+                            </h2>
+
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;">
+                                <!-- Caller Number -->
+                                <tr>
+                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e0e0e0;">
+                                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td width="40" valign="top">
+                                                    <span style="font-size: 24px;">👤</span>
+                                                </td>
+                                                <td>
+                                                    <p style="color: #666; margin: 0; font-size: 13px; font-weight: 600;">CALLER NUMBER</p>
+                                                    <p style="color: #333; margin: 5px 0 0 0; font-size: 18px; font-weight: 600;">{{caller_number}}</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+
+                                <!-- Call Duration -->
+                                <tr>
+                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e0e0e0;">
+                                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td width="40" valign="top">
+                                                    <span style="font-size: 24px;">⏱️</span>
+                                                </td>
+                                                <td>
+                                                    <p style="color: #666; margin: 0; font-size: 13px; font-weight: 600;">CALL DURATION</p>
+                                                    <p style="color: #333; margin: 5px 0 0 0; font-size: 18px; font-weight: 600;">{{call_duration}}</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+
+                                <!-- Call Time -->
+                                <tr>
+                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e0e0e0;">
+                                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td width="40" valign="top">
+                                                    <span style="font-size: 24px;">🕐</span>
+                                                </td>
+                                                <td>
+                                                    <p style="color: #666; margin: 0; font-size: 13px; font-weight: 600;">CALL TIME</p>
+                                                    <p style="color: #333; margin: 5px 0 0 0; font-size: 18px; font-weight: 600;">{{call_time}}</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+
+                                <!-- Total Exchanges -->
+                                <tr>
+                                    <td style="padding: 15px 20px;">
+                                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td width="40" valign="top">
+                                                    <span style="font-size: 24px;">💬</span>
+                                                </td>
+                                                <td>
+                                                    <p style="color: #666; margin: 0; font-size: 13px; font-weight: 600;">TOTAL EXCHANGES</p>
+                                                    <p style="color: #333; margin: 5px 0 0 0; font-size: 18px; font-weight: 600;">{{total_exchanges}} messages</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Conversation Section -->
+                    <tr>
+                        <td style="padding: 0 40px 30px 40px;">
+                            <h2 style="color: #333; margin: 0 0 20px 0; font-size: 20px; border-bottom: 2px solid #667eea; padding-bottom: 10px;">
+                                💬 Conversation Transcript
+                            </h2>
+
+                            <!-- Conversation will be formatted by backend -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+                                <tr>
+                                    <td style="padding: 20px; background-color: #fafafa;">
+                                        <pre style="font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; font-size: 14px; line-height: 1.8; white-space: pre-wrap; color: #333;">{{conversation}}</pre>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Status Badge -->
+                    <tr>
+                        <td style="padding: 0 40px 30px 40px;">
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td align="center">
+                                        <div style="display: inline-block; background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 50px; padding: 10px 30px;">
+                                            <p style="margin: 0; color: #155724; font-weight: 600; font-size: 14px;">
+                                                ✅ Call Handled Successfully
+                                            </p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 25px 40px; border-top: 1px solid #e0e0e0;">
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td align="center">
+                                        <p style="color: #666; margin: 0; font-size: 13px;">
+                                            🤖 Powered by <strong style="color: #667eea;">Ellysha AI Voice Assistant</strong>
+                                        </p>
+                                        <p style="color: #999; margin: 5px 0 0 0; font-size: 12px;">
+                                            Automated call handling • AI-powered responses
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+
+    </table>
+
+</body>
+</html>
