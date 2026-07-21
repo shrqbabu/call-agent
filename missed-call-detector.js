@@ -22,7 +22,7 @@ function monitorMissedCalls() {
     setInterval(async () => {
         try {
             // Get recent call log using Termux API
-            exec('termux-telephony-calllog -l 5', async (err, stdout, stderr) => {
+            exec('termux-call-log -l 5', async (err, stdout, stderr) => {
                 if (err) {
                     console.log('⚠️ Call log access error:', err.message);
                     return;
@@ -47,25 +47,19 @@ function monitorMissedCalls() {
 // Process individual call
 async function processCall(call) {
     try {
-        const {
-            number: callerNumber,
-            type: callType,
-            date: callTime,
-            duration
-        } = call;
+        // termux-call-log format:
+        // { name, phone_number, type: "MISSED"|"INCOMING"|"OUTGOING", date: "YYYY-MM-DD HH:MM:SS", duration: "MM:SS" }
+        const callerNumber = call.phone_number || call.number;
+        const callType = call.type;
+        const callTime = new Date(call.date).getTime();
 
-        // Only process INCOMING calls
-        if (callType !== 'INCOMING') {
-            return;
-        }
-
-        // Only process MISSED calls (duration = 0)
-        if (duration > 0) {
+        // Only process MISSED calls
+        if (callType !== 'MISSED') {
             return;
         }
 
         // Only process NEW calls (after our start time)
-        if (callTime < lastProcessedTime) {
+        if (!callTime || isNaN(callTime) || callTime < lastProcessedTime) {
             return;
         }
 
@@ -76,7 +70,7 @@ async function processCall(call) {
         }
 
         // Skip invalid numbers
-        if (!callerNumber || callerNumber.length < 10) {
+        if (!callerNumber || callerNumber.replace(/\D/g, '').length < 10) {
             return;
         }
 
@@ -150,7 +144,7 @@ async function sendImmediateSMS(callerNumber) {
 // Check if user called again after missed call
 async function checkRecentCalls(callerNumber, originalCallTime) {
     return new Promise((resolve) => {
-        exec('termux-telephony-calllog -l 5', (err, stdout) => {
+        exec('termux-call-log -l 5', (err, stdout) => {
             if (err) {
                 resolve(false);
                 return;
@@ -161,9 +155,9 @@ async function checkRecentCalls(callerNumber, originalCallTime) {
 
                 // Check if this number called again after original missed call
                 const recentCall = calls.find(call =>
-                    call.number === callerNumber &&
-                    call.type === 'INCOMING' &&
-                    call.date > originalCallTime
+                    (call.phone_number || call.number) === callerNumber &&
+                    (call.type === 'INCOMING' || call.type === 'MISSED') &&
+                    new Date(call.date).getTime() > originalCallTime
                 );
 
                 resolve(!!recentCall);
