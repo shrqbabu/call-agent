@@ -116,9 +116,9 @@ app.post('/outbound-voice', (req, res) => {
     const twiml = new twilio.twiml.VoiceResponse();
 
     twiml.say({
-        voice: 'Polly.Aditi',
+        voice: 'Polly.Kajal-Neural',
         language: 'hi-IN'
-    }, 'Hello! Aapne abhi Shariq sir ko call kiya tha. Main Ellysha, unki assistant. Wo abhi busy hain. Aapka message bataiye, main unhe inform kar dungi.');
+    }, 'हेलो! आपने अभी शारिक़ सर को कॉल किया था। मैं एलीशा, उनकी असिस्टेंट। वो अभी बिज़ी हैं। आपका मैसेज बताइए, मैं उन्हें इनफॉर्म कर दूँगी।');
 
     twiml.pause({ length: 1 });
 
@@ -132,9 +132,9 @@ app.post('/outbound-voice', (req, res) => {
 
     // Gather timed out (caller said nothing)
     twiml.say({
-        voice: 'Polly.Aditi',
+        voice: 'Polly.Kajal-Neural',
         language: 'hi-IN'
-    }, 'Koi baat nahi, main sir ko bata dungi ki aapne call kiya tha. Shukriya!');
+    }, 'कोई बात नहीं, मैं सर को बता दूँगी कि आपने कॉल किया था। शुक्रिया!');
     twiml.hangup();
 
     res.type('text/xml');
@@ -160,15 +160,20 @@ app.post('/process-callback-speech', async (req, res) => {
     const twiml = new twilio.twiml.VoiceResponse();
 
     twiml.say({
-        voice: 'Polly.Aditi',
+        voice: 'Polly.Kajal-Neural',
         language: 'hi-IN'
     }, aiResponse);
 
     // Check if conversation should end
-    const shouldEnd = aiResponse.toLowerCase().includes('inform kar deti') ||
+    const shouldEnd = aiResponse.includes('इनफॉर्म कर देती') ||
+                     aiResponse.includes('बता देती हूँ') ||
+                     aiResponse.includes('बता देती हूं') ||
+                     aiResponse.toLowerCase().includes('inform kar deti') ||
                      aiResponse.toLowerCase().includes('bata deti hoon') ||
                      userSpeech.toLowerCase().includes('thank') ||
                      userSpeech.toLowerCase().includes('bye') ||
+                     userSpeech.includes('धन्यवाद') ||
+                     userSpeech.includes('शुक्रिया') ||
                      state.c.length >= MAX_EXCHANGES;
 
     if (!shouldEnd && userSpeech.length > 5) {
@@ -188,9 +193,9 @@ app.post('/process-callback-speech', async (req, res) => {
         await sendEmailNotification(to, state.c, Math.round((Date.now() - state.st) / 1000));
     } else {
         twiml.say({
-            voice: 'Polly.Aditi',
+            voice: 'Polly.Kajal-Neural',
             language: 'hi-IN'
-        }, 'Shukriya! Shariq sir jaldi aapse contact karenge. Have a good day!');
+        }, 'शुक्रिया! शारिक़ सर जल्दी आपसे कॉन्टैक्ट करेंगे। आपका दिन अच्छा रहे!');
         twiml.hangup();
 
         // Send email now — we have the full transcript here
@@ -209,9 +214,9 @@ app.post('/end-call', async (req, res) => {
 
     const twiml = new twilio.twiml.VoiceResponse();
     twiml.say({
-        voice: 'Polly.Aditi',
+        voice: 'Polly.Kajal-Neural',
         language: 'hi-IN'
-    }, 'Theek hai, main Shariq sir ko inform kar deti hoon. Shukriya!');
+    }, 'ठीक है, मैं शारिक़ सर को इनफॉर्म कर देती हूँ। शुक्रिया!');
     twiml.hangup();
 
     await sendEmailNotification(to, state.c, Math.round((Date.now() - state.st) / 1000));
@@ -236,16 +241,19 @@ async function generateAIResponse(userMessage, callerNumber, history = []) {
                 messages: [
                     {
                         role: 'system',
-                        content: `Tum Ellysha ho - Shariq sir ki assistant.
+                        content: `तुम एलीशा हो - शारिक़ सर की असिस्टेंट.
 
-IMPORTANT: Ye CALLBACK call hai. User ne pehle Shariq sir ko call kiya tha, ab tum unhe wapas call kar rahi ho.
+IMPORTANT: ये CALLBACK कॉल है. User ने पहले शारिक़ सर को कॉल किया था, अब तुम उन्हें वापस कॉल कर रही हो.
 
 RULES:
+- हमेशा DEVANAGARI (हिंदी) script में लिखो - कभी English/Latin letters use मत करो (TTS सही से बोल सके इसलिए)
+- English words भी देवनागरी में लिखो: "बिज़ी", "मैसेज", "इनफॉर्म", "कॉल"
 - SHORT responses (1-2 sentences)
-- Natural Hinglish
-- Jab message sun lo: "Theek hai, main sir ko inform kar deti hoon"
-- Personal questions pe politely deflect
-- Natural: "hmm", "acha", "theek hai"
+- Natural बोलचाल वाली हिंदी/हिंग्लिश
+- जब मैसेज सुन लो: "ठीक है, मैं सर को इनफॉर्म कर देती हूँ"
+- Personal सवालों पे politely टाल दो
+- Natural fillers: "हम्म", "अच्छा", "ठीक है"
+- Numbers/digits भी शब्दों में लिखो: "दस बजे" not "10 बजे"
 
 CALLER: ${callerNumber}`
                     },
@@ -267,7 +275,7 @@ CALLER: ${callerNumber}`
         return response.data.choices[0].message.content.trim();
     } catch (err) {
         console.error('AI Error:', err.message);
-        return "Theek hai, main Shariq sir ko bata deti hoon.";
+        return "ठीक है, मैं शारिक़ सर को बता देती हूँ।";
     }
 }
 
