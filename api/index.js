@@ -181,6 +181,11 @@ app.post('/process-callback-speech', async (req, res) => {
         });
         // Gather timeout fallback — end gracefully and still notify
         twiml.redirect({ method: 'POST' }, `/end-call?s=${encodeState(state)}`);
+
+        // Send transcript-so-far NOW: if the caller hangs up mid-call,
+        // Twilio never hits our next webhook and this is the only email that goes out.
+        // (Latest email always has the fullest transcript.)
+        await sendEmailNotification(to, state.c, Math.round((Date.now() - state.st) / 1000));
     } else {
         twiml.say({
             voice: 'Polly.Aditi',
