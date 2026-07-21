@@ -1,11 +1,12 @@
 {
   "name": "ellysha-twilio-voice-bot",
   "version": "1.0.0",
-  "description": "AI Voice Assistant for incoming calls using Twilio",
-  "main": "server.js",
+  "description": "AI missed-call callback assistant using Twilio (Vercel serverless)",
+  "main": "api/index.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node api/index.js",
+    "dev": "nodemon api/index.js",
+    "detector": "node missed-call-detector.js"
   },
   "dependencies": {
     "express": "^4.18.2",

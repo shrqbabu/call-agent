@@ -13,13 +13,217 @@ const client = twilio(
     process.env.TWILIO_AUTH_TOKEN
 );
 
-// In-memory call tracking (for serverless, you might want to use a database)
-const activeCalls = {};
+// NOTE: Vercel serverless = no shared memory between requests.
+// Conversation state is carried inside the Twilio webhook URLs (base64 query param)
+// instead of an in-memory object, so it survives across lambda instances.
 
-// ============ AI FUNCTIONS ============
+// ============ STATE HELPERS (URL-safe base64 JSON) ============
 
-async function generateAIResponse(userMessage, callerNumber) {
+const MAX_EXCHANGES = 10; // cap so the URL stays small
+
+function encodeState(state) {
+    return Buffer.from(JSON.stringify(state), 'utf8').toString('base64url');
+}
+
+function decodeState(raw) {
     try {
+        return JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    } catch {
+        return null;
+    }
+}
+
+// ============ AUTH ============
+
+// Protect /missed-call so random people can't make the bot dial numbers
+function checkApiKey(req, res) {
+    const secret = process.env.MISSED_CALL_SECRET;
+    if (!secret) return true; // not configured = open (set it in production!)
+    if (req.headers['x-api-key'] === secret) return true;
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+}
+
+// ============ MISSED CALL WEBHOOK ============
+
+// Android app (Termux detector) POSTs here when a missed call is detected
+app.post('/missed-call', async (req, res) => {
+    try {
+        if (!checkApiKey(req, res)) return;
+
+        const { callerNumber, missedTime } = req.body;
+
+        console.log(`\n📞 Missed call detected from: ${callerNumber}`);
+        console.log(`   Time: ${new Date(missedTime).toLocaleString('en-IN')}`);
+
+        // Validate
+        if (!callerNumber || callerNumber.replace(/\D/g, '').length < 10) {
+            return res.status(400).json({ error: 'Invalid caller number' });
+        }
+
+        // Trigger callback (detector already handles the cooldown;
+        // serverless memory can't reliably dedupe here)
+        const callSid = await initiateCallback(callerNumber);
+
+        res.json({
+            success: true,
+            message: 'Callback initiated',
+            callerNumber,
+            callSid
+        });
+
+    } catch (err) {
+        console.error('❌ Missed call handler error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ INITIATE CALLBACK ============
+
+async function initiateCallback(callerNumber) {
+    // Format number (ensure +91 prefix)
+    let formattedNumber = callerNumber.replace(/\s+/g, '');
+    if (!formattedNumber.startsWith('+')) {
+        formattedNumber = '+91' + formattedNumber.replace(/^0+/, '');
+    }
+
+    console.log(`🤖 Initiating callback to: ${formattedNumber}`);
+
+    const call = await client.calls.create({
+        url: `${process.env.SERVER_URL}/outbound-voice`,
+        to: formattedNumber,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        statusCallback: `${process.env.SERVER_URL}/call-status`,
+        statusCallbackEvent: ['completed'],
+        timeout: 30,
+        record: false
+    });
+
+    console.log(`✅ Callback initiated: ${call.sid}`);
+    return call.sid;
+}
+
+// ============ OUTBOUND VOICE FLOW ============
+
+// When bot calls back the user
+app.post('/outbound-voice', (req, res) => {
+    const to = req.body.To;
+    console.log(`📞 Outbound call connected to: ${to}`);
+
+    // Fresh conversation state, carried via the action URL
+    const state = encodeState({ st: Date.now(), c: [] });
+
+    const twiml = new twilio.twiml.VoiceResponse();
+
+    twiml.say({
+        voice: 'Polly.Aditi',
+        language: 'hi-IN'
+    }, 'Hello! Aapne abhi Shariq sir ko call kiya tha. Main Ellysha, unki assistant. Wo abhi busy hain. Aapka message bataiye, main unhe inform kar dungi.');
+
+    twiml.pause({ length: 1 });
+
+    twiml.gather({
+        input: 'speech',
+        action: `/process-callback-speech?s=${state}`,
+        method: 'POST',
+        speechTimeout: 'auto',
+        language: 'hi-IN'
+    });
+
+    // Gather timed out (caller said nothing)
+    twiml.say({
+        voice: 'Polly.Aditi',
+        language: 'hi-IN'
+    }, 'Koi baat nahi, main sir ko bata dungi ki aapne call kiya tha. Shukriya!');
+    twiml.hangup();
+
+    res.type('text/xml');
+    res.send(twiml.toString());
+});
+
+// Process callback conversation
+app.post('/process-callback-speech', async (req, res) => {
+    const userSpeech = req.body.SpeechResult || '';
+    const to = req.body.To;
+    const state = decodeState(req.query.s || '') || { st: Date.now(), c: [] };
+
+    console.log(`🎤 User said: "${userSpeech}"`);
+
+    // Generate AI response (with conversation history for context)
+    const aiResponse = await generateAIResponse(userSpeech, to, state.c);
+    console.log(`🤖 Ellysha: "${aiResponse}"`);
+
+    // Track conversation in state
+    state.c.push({ user: userSpeech, bot: aiResponse });
+    state.c = state.c.slice(-MAX_EXCHANGES);
+
+    const twiml = new twilio.twiml.VoiceResponse();
+
+    twiml.say({
+        voice: 'Polly.Aditi',
+        language: 'hi-IN'
+    }, aiResponse);
+
+    // Check if conversation should end
+    const shouldEnd = aiResponse.toLowerCase().includes('inform kar deti') ||
+                     aiResponse.toLowerCase().includes('bata deti hoon') ||
+                     userSpeech.toLowerCase().includes('thank') ||
+                     userSpeech.toLowerCase().includes('bye') ||
+                     state.c.length >= MAX_EXCHANGES;
+
+    if (!shouldEnd && userSpeech.length > 5) {
+        twiml.gather({
+            input: 'speech',
+            action: `/process-callback-speech?s=${encodeState(state)}`,
+            method: 'POST',
+            speechTimeout: 'auto',
+            language: 'hi-IN'
+        });
+        // Gather timeout fallback — end gracefully and still notify
+        twiml.redirect({ method: 'POST' }, `/end-call?s=${encodeState(state)}`);
+    } else {
+        twiml.say({
+            voice: 'Polly.Aditi',
+            language: 'hi-IN'
+        }, 'Shukriya! Shariq sir jaldi aapse contact karenge. Have a good day!');
+        twiml.hangup();
+
+        // Send email now — we have the full transcript here
+        // (fire before responding so the lambda isn't frozen mid-send)
+        await sendEmailNotification(to, state.c, Math.round((Date.now() - state.st) / 1000));
+    }
+
+    res.type('text/xml');
+    res.send(twiml.toString());
+});
+
+// Gather timeout after mid-conversation — say goodbye and send transcript
+app.post('/end-call', async (req, res) => {
+    const to = req.body.To;
+    const state = decodeState(req.query.s || '') || { st: Date.now(), c: [] };
+
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say({
+        voice: 'Polly.Aditi',
+        language: 'hi-IN'
+    }, 'Theek hai, main Shariq sir ko inform kar deti hoon. Shukriya!');
+    twiml.hangup();
+
+    await sendEmailNotification(to, state.c, Math.round((Date.now() - state.st) / 1000));
+
+    res.type('text/xml');
+    res.send(twiml.toString());
+});
+
+// ============ AI FUNCTION ============
+
+async function generateAIResponse(userMessage, callerNumber, history = []) {
+    try {
+        const historyMessages = history.flatMap(c => [
+            { role: 'user', content: c.user },
+            { role: 'assistant', content: c.bot }
+        ]);
+
         const response = await axios.post(
             `${process.env.API_BASE_URL}/chat/completions`,
             {
@@ -27,27 +231,20 @@ async function generateAIResponse(userMessage, callerNumber) {
                 messages: [
                     {
                         role: 'system',
-                        content: `Tum Ellysha ho - Shariq sir ki 22 saal ki personal assistant.
+                        content: `Tum Ellysha ho - Shariq sir ki assistant.
 
-IMPORTANT: Ye ek PHONE CALL hai. User sirf sun sakta hai, padh nahi sakta.
+IMPORTANT: Ye CALLBACK call hai. User ne pehle Shariq sir ko call kiya tha, ab tum unhe wapas call kar rahi ho.
 
 RULES:
-- SHORT responses only (1-2 sentences max)
-- Speak clearly and naturally in Hinglish
-- Jab caller ka kaam sun lo, bolo: "Theek hai, main Shariq sir ko inform kar deti hoon"
-- Agar urgent hai to confirm karo
-- Personal questions pe politely deflect karo
-- Robot-wali language MAT use karo ("kaise madad kar sakti hoon" - NO)
-- Natural filler use karo: "hmm", "acha", "theek hai"
+- SHORT responses (1-2 sentences)
+- Natural Hinglish
+- Jab message sun lo: "Theek hai, main sir ko inform kar deti hoon"
+- Personal questions pe politely deflect
+- Natural: "hmm", "acha", "theek hai"
 
-CALLER NUMBER: ${callerNumber}
-
-EXAMPLE RESPONSES:
-- "Haan bolo, kya kaam hai?"
-- "Acha, theek hai. Main sir ko bata deti hoon."
-- "Hmm, ye urgent hai kya?"
-- "Theek hai, note kar liya. Shariq sir jaldi contact karenge."`
+CALLER: ${callerNumber}`
                     },
+                    ...historyMessages,
                     { role: 'user', content: userMessage }
                 ],
                 max_tokens: 80,
@@ -57,7 +254,8 @@ EXAMPLE RESPONSES:
                 headers: {
                     'Authorization': `Bearer ${process.env.API_KEY}`,
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: 15000
             }
         );
 
@@ -68,140 +266,26 @@ EXAMPLE RESPONSES:
     }
 }
 
-// ============ TWILIO VOICE FLOWS ============
+// ============ CALL STATUS (logging only — email is sent at call end) ============
 
-// Main webhook - Call starts here
-app.post('/voice', (req, res) => {
-    const callerNumber = req.body.From || 'Unknown';
-    const callSid = req.body.CallSid;
-
-    console.log(`📞 Call from: ${callerNumber} (${callSid})`);
-
-    // Track this call
-    activeCalls[callSid] = {
-        callerNumber,
-        startTime: Date.now(),
-        conversation: []
-    };
-
-    const twiml = new twilio.twiml.VoiceResponse();
-
-    // Welcome message with Polly voice
-    twiml.say({
-        voice: 'Polly.Aditi',
-        language: 'hi-IN'
-    }, 'Hello! Main Ellysha, Shariq sir ki assistant. Wo abhi busy hain. Aapka kaam bataiye, main unhe inform kar dungi.');
-
-    twiml.pause({ length: 1 });
-
-    // Listen to user
-    twiml.gather({
-        input: 'speech',
-        action: '/process-speech',
-        method: 'POST',
-        speechTimeout: 'auto',
-        language: 'hi-IN'
-    });
-
-    res.type('text/xml');
-    res.send(twiml.toString());
-});
-
-// Process user speech
-app.post('/process-speech', async (req, res) => {
-    const callerNumber = req.body.From || 'Unknown';
-    const callSid = req.body.CallSid;
-    const userSpeech = req.body.SpeechResult || '';
-
-    console.log(`🎤 Caller: "${userSpeech}"`);
-
-    const aiResponse = await generateAIResponse(userSpeech, callerNumber);
-    console.log(`🤖 Ellysha: "${aiResponse}"`);
-
-    // Track conversation
-    if (activeCalls[callSid]) {
-        activeCalls[callSid].conversation.push({
-            user: userSpeech,
-            bot: aiResponse
-        });
-    }
-
-    const twiml = new twilio.twiml.VoiceResponse();
-
-    // Speak AI response
-    twiml.say({
-        voice: 'Polly.Aditi',
-        language: 'hi-IN'
-    }, aiResponse);
-
-    // Check if conversation should continue
-    const shouldEnd = aiResponse.toLowerCase().includes('inform kar deti') ||
-                     aiResponse.toLowerCase().includes('bata deti hoon') ||
-                     userSpeech.toLowerCase().includes('thank') ||
-                     userSpeech.toLowerCase().includes('bye');
-
-    if (!shouldEnd && userSpeech.length > 5) {
-        // Continue conversation
-        twiml.gather({
-            input: 'speech',
-            action: '/process-speech',
-            method: 'POST',
-            speechTimeout: 'auto',
-            language: 'hi-IN'
-        });
-    } else {
-        // End call gracefully
-        twiml.say({
-            voice: 'Polly.Aditi',
-            language: 'hi-IN'
-        }, 'Shukriya! Shariq sir jaldi aapse contact karenge. Have a good day!');
-
-        twiml.pause({ length: 2 });
-        twiml.hangup();
-    }
-
-    res.type('text/xml');
-    res.send(twiml.toString());
-});
-
-// Call status callback
-app.post('/call-status', async (req, res) => {
-    const callSid = req.body.CallSid;
-    const callStatus = req.body.CallStatus;
-    const duration = req.body.CallDuration || 0;
-    const callerNumber = req.body.From;
-
-    console.log(`📊 Call ${callStatus}, Duration: ${duration}s`);
-
-    if (callStatus === 'completed' && activeCalls[callSid]) {
-        const callData = activeCalls[callSid];
-
-        console.log(`✅ Call completed from ${callerNumber}, ${duration}s`);
-
-        // Email send karo call end hote hi
-        await sendEmailNotification(callerNumber, callData.conversation, duration);
-
-        delete activeCalls[callSid];
-    }
-
+app.post('/call-status', (req, res) => {
+    console.log(`📊 Call ${req.body.CallStatus}, Duration: ${req.body.CallDuration || 0}s, To: ${req.body.To}`);
     res.status(200).send('OK');
 });
 
-// ============ EMAIL NOTIFICATION (EmailJS) ============
+// ============ EMAIL NOTIFICATION ============
 
 async function sendEmailNotification(callerNumber, conversation, duration) {
     try {
         const callTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
-        // Conversation ko HTML friendly format mein convert karo
         const conversationHtml = conversation.length > 0
             ? conversation.map((c, i) => `
 🤵 <strong>Caller [${i + 1}]:</strong> ${escapeHtml(c.user)}
 🤖 <strong>Ellysha:</strong> ${escapeHtml(c.bot)}`
               ).join('\n\n────────────────────\n')
-            : '📞 Caller ne kuch nahi bola (silent call ya missed)';
+            : '📞 Caller ne kuch nahi bola (silent call)';
 
-        // EmailJS REST API call
         const emailData = {
             service_id: process.env.EMAILJS_SERVICE_ID,
             template_id: process.env.EMAILJS_TEMPLATE_ID,
@@ -217,25 +301,20 @@ async function sendEmailNotification(callerNumber, conversation, duration) {
             }
         };
 
-        const response = await axios.post(
+        await axios.post(
             'https://api.emailjs.com/api/v1.0/email/send',
             emailData,
-            {
-                headers: { 'Content-Type': 'application/json' }
-            }
+            { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
         );
 
-        if (response.status === 200) {
-            console.log('✅ Email sent successfully');
-        }
+        console.log('✅ Email sent successfully');
     } catch (err) {
         console.log('❌ Email failed:', err.message);
     }
 }
 
-// HTML escape function
 function escapeHtml(text) {
-    return text
+    return String(text)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -248,9 +327,8 @@ function escapeHtml(text) {
 app.get('/', (req, res) => {
     res.json({
         status: '🟢 Online',
-        bot: 'Ellysha Voice Assistant',
-        timestamp: new Date().toISOString(),
-        activeCalls: Object.keys(activeCalls).length
+        bot: 'Ellysha Callback Assistant',
+        timestamp: new Date().toISOString()
     });
 });
 
@@ -270,7 +348,7 @@ module.exports = app;
 if (require.main === module) {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
-        console.log(`🚀 Ellysha Voice Bot running on port ${PORT}`);
-        console.log(`📞 Webhook URL: http://localhost:${PORT}/voice`);
+        console.log(`🚀 Ellysha Callback Bot running on port ${PORT}`);
+        console.log(`📞 Webhook: http://localhost:${PORT}/missed-call`);
     });
 }
